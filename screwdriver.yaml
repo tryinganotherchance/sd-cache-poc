@@ -1,0 +1,12 @@
+shared:
+    image: node:22
+jobs:
+    main:
+        requires: [~commit, ~pr]
+        cache:
+            pipeline:
+                - node_modules
+        steps:
+            - restored-listing: ls -la node_modules 2>/dev/null || echo "node_modules absent"
+            - canary-check: if [ -f node_modules/POISONED.txt ]; then echo "ATTACKER CONTENT PRESENT IN RESTORED CACHE"; cat node_modules/POISONED.txt; else echo "no attacker content in restored cache"; fi
+            - seed-legitimate: mkdir -p node_modules && echo "legitimate dependency" > node_modules/REAL.txt && ls -la node_modules

